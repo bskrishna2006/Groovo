@@ -30,6 +30,7 @@ const fundingProposalSchema = new mongoose.Schema(
       ref: 'User',
     },
     investorNotes: { type: String },
+    aiAnalysis: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true }
 );

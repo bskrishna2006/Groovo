@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['entrepreneur', 'investor', 'mentor', 'auditor', 'patent_officer'],
+      enum: ['entrepreneur', 'investor', 'mentor', 'auditor', 'patent_officer', 'admin'],
       required: [true, 'Role is required'],
     },
     company: { type: String, trim: true },
@@ -31,6 +31,7 @@ const userSchema = new mongoose.Schema(
     location: { type: String, trim: true },
     avatarUrl: { type: String },
     expertise: [{ type: String }],
+    phone: { type: String, trim: true },
     rating: { type: Number, default: 0 },
     sessionsCompleted: { type: Number, default: 0 },
   },

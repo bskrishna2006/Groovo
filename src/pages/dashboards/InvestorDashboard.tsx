@@ -20,7 +20,9 @@ import {
   MapPin,
   Users,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  Brain,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -67,6 +69,7 @@ const InvestorDashboard = () => {
           },
           submittedDate: new Date(p.createdAt).toLocaleDateString(),
           status: p.status,
+          aiAnalysis: p.aiAnalysis || null,
         })));
       }
       if (statsData.success) setDashStats(statsData.data);
@@ -308,6 +311,51 @@ const InvestorDashboard = () => {
                         </Button>
                       </div>
                     </div>
+
+                    {/* AI Analysis Section */}
+                    {proposal.aiAnalysis && (
+                      <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Brain className="h-4 w-4 text-indigo-500" />
+                          <span className="text-sm font-semibold">AI Investment Analysis</span>
+                          <Badge className="text-xs bg-indigo-100 text-indigo-800">
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            Score: {proposal.aiAnalysis.investmentScore}/100
+                          </Badge>
+                          <Badge className={`text-xs ${proposal.aiAnalysis.riskLevel === 'low' ? 'bg-green-100 text-green-800' : proposal.aiAnalysis.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                            {proposal.aiAnalysis.riskLevel} risk
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-3">{proposal.aiAnalysis.summary}</p>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                          {proposal.aiAnalysis.categories?.map((cat: any, i: number) => (
+                            <div key={i} className="text-center p-2 rounded-lg bg-muted/30">
+                              <p className="text-xs text-muted-foreground">{cat.name}</p>
+                              <p className={`text-lg font-bold ${cat.score >= 70 ? 'text-green-500' : cat.score >= 40 ? 'text-yellow-500' : 'text-red-500'}`}>{cat.score}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <p className="font-medium text-green-700 dark:text-green-400 mb-1">Strengths</p>
+                            <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
+                              {proposal.aiAnalysis.strengths?.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="font-medium text-red-700 dark:text-red-400 mb-1">Risks</p>
+                            <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
+                              {proposal.aiAnalysis.risks?.map((r: string, i: number) => <li key={i}>{r}</li>)}
+                            </ul>
+                          </div>
+                        </div>
+                        {proposal.aiAnalysis.recommendation && (
+                          <div className="mt-2 p-2 rounded bg-indigo-50 dark:bg-indigo-950/30 text-xs">
+                            <span className="font-medium">AI Recommendation:</span> {proposal.aiAnalysis.recommendation}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}

@@ -1,6 +1,7 @@
 const MentorshipRequest = require('../models/MentorshipRequest');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const { sendMentorshipAccepted } = require('../utils/emailService');
 
 // @desc    Create mentorship request
 // @route   POST /api/mentorship
@@ -75,6 +76,14 @@ exports.updateStatus = async (req, res) => {
       type: 'mentorship_update',
       relatedId: request._id,
     });
+
+    // Send email if accepted
+    if (req.body.status === 'accepted') {
+      const entrepreneur = await User.findById(request.entrepreneur);
+      if (entrepreneur?.email) {
+        sendMentorshipAccepted(entrepreneur.email, req.user.fullName);
+      }
+    }
 
     res.json({ success: true, data: request });
   } catch (err) {

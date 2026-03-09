@@ -50,6 +50,9 @@ const Login = () => {
         case 'patent_officer':
           navigate('/collaborator');
           break;
+        case 'admin':
+          navigate('/admin');
+          break;
         default:
           navigate('/');
       }

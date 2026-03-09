@@ -20,6 +20,9 @@ app.use('/api/forum', require('./routes/forumRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
+app.use('/api/profile', require('./routes/profileRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {

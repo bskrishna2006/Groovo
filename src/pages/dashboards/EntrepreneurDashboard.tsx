@@ -26,6 +26,8 @@ import AuditRequestForm from '../../components/forms/AuditRequestForm';
 import RoadmapViewer from '../../components/RoadmapViewer';
 import Forum from '../../components/forum/Forum';
 import Messaging from '../../components/Messaging';
+import { RequestStatusChart, RequestsByTypeChart } from '../../components/DashboardCharts';
+import StartupHealthAI from '../../components/StartupHealthAI';
 import { useAuth } from '../../contexts/AuthContext';
 
 const REFRESH_INTERVAL = 15000; // 15 seconds
@@ -256,14 +258,14 @@ const EntrepreneurDashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Funding Progress + Startup Health */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Funding Progress</CardTitle>
-                  <CardDescription>Track your funding milestones</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+            {/* Funding Progress */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Funding Progress</CardTitle>
+                <CardDescription>Track your funding milestones</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm">Seed Round</span>
@@ -278,38 +280,32 @@ const EntrepreneurDashboard = () => {
                     </div>
                     <Progress value={seriesAPercent} className="h-2" />
                   </div>
-                  {dashStats?.acceptedFunding > 0 && (
-                    <p className="text-xs text-green-600 mt-2">
-                      ✓ {dashStats.acceptedFunding} proposal(s) accepted by investors
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+                </div>
+                {dashStats?.acceptedFunding > 0 && (
+                  <p className="text-xs text-green-600 mt-3">
+                    ✓ {dashStats.acceptedFunding} proposal(s) accepted by investors
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Startup Health</CardTitle>
-                  <CardDescription>Overall business metrics</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Business Plan</span>
-                    {getHealthBadge(startupHealth?.businessPlan || 'pending')}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Legal Structure</span>
-                    {getHealthBadge(startupHealth?.legalStructure || 'pending')}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">IP Protection</span>
-                    {getHealthBadge(startupHealth?.ipProtection || 'pending')}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Market Validation</span>
-                    {getHealthBadge(startupHealth?.marketValidation || 'pending')}
-                  </div>
-                </CardContent>
-              </Card>
+            {/* AI Startup Health Analysis */}
+            <StartupHealthAI />
+
+            {/* Analytics Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <RequestStatusChart data={[
+                { name: 'Pending', value: (dashStats?.mentorshipRequests?.filter((r: any) => r.status === 'pending')?.length || 0) + (dashStats?.fundingRequests?.filter((r: any) => r.status === 'submitted')?.length || 0) },
+                { name: 'Accepted', value: (dashStats?.mentorshipRequests?.filter((r: any) => r.status === 'accepted')?.length || 0) + (dashStats?.acceptedFunding || 0) },
+                { name: 'Rejected', value: (dashStats?.mentorshipRequests?.filter((r: any) => r.status === 'rejected')?.length || 0) + (dashStats?.fundingRequests?.filter((r: any) => r.status === 'rejected')?.length || 0) },
+                { name: 'Completed', value: (dashStats?.mentorshipRequests?.filter((r: any) => r.status === 'completed')?.length || 0) },
+              ]} />
+              <RequestsByTypeChart data={[
+                { type: 'Mentorship', count: dashStats?.mentorshipRequests?.length || 0 },
+                { type: 'Funding', count: dashStats?.fundingRequests?.length || 0 },
+                { type: 'Patents', count: dashStats?.patentRequests?.length || 0 },
+                { type: 'Audits', count: dashStats?.auditRequests?.length || 0 },
+              ]} />
             </div>
           </TabsContent>
 

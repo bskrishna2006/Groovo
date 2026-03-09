@@ -15,6 +15,8 @@ import Signup from "./pages/Signup";
 import EntrepreneurDashboard from "./pages/dashboards/EntrepreneurDashboard";
 import InvestorDashboard from "./pages/dashboards/InvestorDashboard";
 import CollaboratorDashboard from "./pages/dashboards/CollaboratorDashboard";
+import AdminDashboard from "./pages/dashboards/AdminDashboard";
+import ProfilePage from "./pages/ProfilePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +50,18 @@ const App = () => (
               <Route path="/collaborator" element={
                 <ProtectedRoute allowedRoles={['mentor', 'auditor', 'patent_officer']}>
                   <CollaboratorDashboard />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/admin" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/profile" element={
+                <ProtectedRoute allowedRoles={['entrepreneur', 'investor', 'mentor', 'auditor', 'patent_officer', 'admin']}>
+                  <ProfilePage />
                 </ProtectedRoute>
               } />
               
