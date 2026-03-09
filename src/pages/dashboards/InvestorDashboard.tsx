@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '../../components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,10 +19,14 @@ import {
   Clock,
   MapPin,
   Users,
-  Calendar
+  Calendar,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import Messaging from '../../components/Messaging';
+
+const REFRESH_INTERVAL = 15000;
 
 const InvestorDashboard = () => {
   const [activeTab, setActiveTab] = useState('proposals');
@@ -31,45 +35,54 @@ const InvestorDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [fundingProposals, setFundingProposals] = useState<any[]>([]);
   const [dashStats, setDashStats] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { token } = useAuth();
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [proposalsRes, statsRes] = await Promise.all([
-          fetch('/api/funding', { headers: { Authorization: `Bearer ${token}` } }),
-          fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-        const proposalsData = await proposalsRes.json();
-        const statsData = await statsRes.json();
+  const fetchData = useCallback(async (silent = false) => {
+    if (!token) return;
+    if (!silent) setIsRefreshing(true);
+    try {
+      const [proposalsRes, statsRes] = await Promise.all([
+        fetch('/api/funding', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const proposalsData = await proposalsRes.json();
+      const statsData = await statsRes.json();
 
-        if (proposalsData.success) {
-          setFundingProposals(proposalsData.data.map((p: any) => ({
-            id: p._id,
-            companyName: p.startup?.name || 'Startup',
-            industry: p.startup?.industry || 'Technology',
-            stage: p.fundingStage || 'Seed',
-            fundingAmount: p.fundingAmount,
-            equityOffered: p.equityOffered ? `${p.equityOffered}%` : 'N/A',
-            description: p.useOfFunds,
-            location: p.startup?.location || 'N/A',
-            employees: p.startup?.employees || 'N/A',
-            founder: {
-              name: p.entrepreneur?.fullName || 'Unknown',
-              image: p.entrepreneur?.avatarUrl || '',
-            },
-            submittedDate: new Date(p.createdAt).toLocaleDateString(),
-            status: p.status,
-          })));
-        }
-        if (statsData.success) setDashStats(statsData.data);
-      } catch (err) {
-        console.error('Failed to fetch data', err);
+      if (proposalsData.success) {
+        setFundingProposals(proposalsData.data.map((p: any) => ({
+          id: p._id,
+          companyName: p.startup?.name || 'Startup',
+          industry: p.startup?.industry || 'Technology',
+          stage: p.fundingStage || 'Seed',
+          fundingAmount: p.fundingAmount,
+          equityOffered: p.equityOffered ? `${p.equityOffered}%` : 'N/A',
+          description: p.useOfFunds,
+          location: p.startup?.location || 'N/A',
+          employees: p.startup?.employees || 'N/A',
+          founder: {
+            name: p.entrepreneur?.fullName || 'Unknown',
+            image: p.entrepreneur?.avatarUrl || '',
+          },
+          submittedDate: new Date(p.createdAt).toLocaleDateString(),
+          status: p.status,
+        })));
       }
-    };
-    if (token) fetchData();
+      if (statsData.success) setDashStats(statsData.data);
+    } catch (err) {
+      console.error('Failed to fetch data', err);
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [token]);
+
+  // Initial fetch + 15s polling
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(() => fetchData(true), REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   const stats = [
     {
@@ -120,7 +133,7 @@ const InvestorDashboard = () => {
       const data = await res.json();
       if (data.success) {
         toast({ title: "Success", description: `Proposal ${statusMap[action]}` });
-        setFundingProposals(prev => prev.map(p => p.id === proposalId ? { ...p, status: statusMap[action] } : p));
+        fetchData(); // Re-fetch all data
       }
     } catch (err) {
       toast({ title: "Error", description: "Failed to update proposal", variant: "destructive" });
@@ -170,8 +183,9 @@ const InvestorDashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="proposals">Funding Proposals</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
             <TabsTrigger value="watchlist">Watchlist</TabsTrigger>
             <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
           </TabsList>
@@ -359,6 +373,10 @@ const InvestorDashboard = () => {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="messages">
+            <Messaging />
           </TabsContent>
         </Tabs>
       </div>

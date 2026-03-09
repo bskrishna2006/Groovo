@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import DashboardLayout from '../../components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,45 +17,49 @@ import {
   MessageSquare,
   Upload,
   Download,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  XCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Messaging from '../../components/Messaging';
+
+const REFRESH_INTERVAL = 15000;
 
 const CollaboratorDashboard = () => {
   const { user, profile, token } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [dashStats, setDashStats] = useState<any>(null);
   const [roleData, setRoleData] = useState<any[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
+  const fetchData = useCallback(async (silent = false) => {
+    if (!token) return;
+    if (!silent) setIsRefreshing(true);
+    try {
+      const [statsRes, roleRes] = await Promise.all([
+        fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/dashboard/role-data', { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const statsData = await statsRes.json();
+      const roleResData = await roleRes.json();
+
+      if (statsData.success) setDashStats(statsData.data);
+      if (roleResData.success) setRoleData(roleResData.data);
+    } catch (err) {
+      console.error('Failed to fetch data', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [token]);
+
+  // Initial fetch + 15s polling
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const statsRes = await fetch('/api/dashboard/stats', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const statsData = await statsRes.json();
-        if (statsData.success) setDashStats(statsData.data);
-
-        // Fetch role-specific data
-        let endpoint = '';
-        if (profile?.role === 'mentor') endpoint = '/api/mentorship';
-        else if (profile?.role === 'auditor') endpoint = '/api/audits';
-        else if (profile?.role === 'patent_officer') endpoint = '/api/patents';
-
-        if (endpoint) {
-          const roleRes = await fetch(endpoint, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const roleResData = await roleRes.json();
-          if (roleResData.success) setRoleData(roleResData.data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch data', err);
-      }
-    };
-    if (token) fetchData();
-  }, [token, profile?.role]);
+    fetchData();
+    const interval = setInterval(() => fetchData(true), REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   const handleStatusUpdate = async (itemId: string, status: string) => {
     let endpoint = '';
@@ -75,36 +79,43 @@ const CollaboratorDashboard = () => {
       const data = await res.json();
       if (data.success) {
         toast({ title: 'Updated', description: `Status updated to ${status}` });
-        setRoleData(prev => prev.map(item => item._id === itemId ? { ...item, status } : item));
+        fetchData(); // Re-fetch all data
+      } else {
+        throw new Error(data.message);
       }
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to update', variant: 'destructive' });
     }
   };
 
   const getRoleTitle = (role: string) => {
     switch (role) {
-      case 'mentor':
-        return 'Mentor';
-      case 'auditor':
-        return 'Auditor';
-      case 'patent_officer':
-        return 'Patent Officer';
-      default:
-        return 'Collaborator';
+      case 'mentor': return 'Mentor';
+      case 'auditor': return 'Auditor';
+      case 'patent_officer': return 'Patent Officer';
+      default: return 'Collaborator';
     }
   };
 
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'mentor':
-        return <Users className="h-4 w-4" />;
-      case 'auditor':
-        return <Shield className="h-4 w-4" />;
-      case 'patent_officer':
-        return <FileText className="h-4 w-4" />;
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'accepted':
+      case 'approved':
+      case 'completed':
+      case 'granted':
+        return <Badge className="bg-green-100 text-green-800">{status}</Badge>;
+      case 'rejected':
+        return <Badge className="bg-red-100 text-red-800">{status}</Badge>;
+      case 'pending':
+      case 'submitted':
+      case 'requested':
+        return <Badge className="bg-yellow-100 text-yellow-800">{status}</Badge>;
+      case 'under_review':
+      case 'in_progress':
+      case 'assigned':
+        return <Badge className="bg-blue-100 text-blue-800">{status.replace('_', ' ')}</Badge>;
       default:
-        return <Users className="h-4 w-4" />;
+        return <Badge variant="outline">{status}</Badge>;
     }
   };
 
@@ -135,111 +146,69 @@ const CollaboratorDashboard = () => {
 
   const stats = getStatsForRole();
 
-  // Mock data - would come from API based on user role
-  const mentorData = {
-    mentees: [
-      {
-        id: '1',
-        name: 'Sarah Johnson',
-        company: 'TechStart Solutions',
-        industry: 'Technology',
-        progress: 75,
-        nextSession: '2024-01-15',
-        image: 'https://images.unsplash.com/photo-1494790108755-2616b612b47c?w=150&h=150&fit=crop&crop=face'
-      },
-      {
-        id: '2',
-        name: 'Michael Chen',
-        company: 'GreenTech Innovations',
-        industry: 'Sustainability',
-        progress: 60,
-        nextSession: '2024-01-17',
-        image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
-      }
-    ]
-  };
-
-  const auditorData = {
-    audits: [
-      {
-        id: '1',
-        company: 'HealthAI Corp',
-        type: 'Financial Audit',
-        status: 'In Progress',
-        deadline: '2024-01-20',
-        progress: 65,
-        riskLevel: 'Low'
-      },
-      {
-        id: '2',
-        company: 'DataFlow Analytics',
-        type: 'Compliance Audit',
-        status: 'Review Required',
-        deadline: '2024-01-25',
-        progress: 90,
-        riskLevel: 'Medium'
-      }
-    ]
-  };
-
-  const patentData = {
-    applications: [
-      {
-        id: '1',
-        title: 'AI-Powered Customer Service System',
-        applicant: 'TechStart Solutions',
-        status: 'Under Review',
-        submittedDate: '2024-01-10',
-        priority: 'High'
-      },
-      {
-        id: '2',
-        title: 'Biodegradable Packaging Material',
-        applicant: 'GreenTech Innovations',
-        status: 'Approved',
-        submittedDate: '2024-01-05',
-        priority: 'Medium'
-      }
-    ]
-  };
-
   const renderMentorContent = () => (
     <>
       <TabsContent value="overview" className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Your Mentees</CardTitle>
-            <CardDescription>Entrepreneurs you're currently mentoring</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Mentorship Requests</CardTitle>
+                <CardDescription>Entrepreneurs requesting your mentorship</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => fetchData()} disabled={isRefreshing}>
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {mentorData.mentees.map((mentee) => (
-                <div key={mentee.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={mentee.image} alt={mentee.name} />
-                      <AvatarFallback>{mentee.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h4 className="font-semibold">{mentee.name}</h4>
-                      <p className="text-sm text-muted-foreground">{mentee.company} • {mentee.industry}</p>
-                      <div className="flex items-center mt-2">
-                        <Progress value={mentee.progress} className="w-24 h-2 mr-2" />
-                        <span className="text-xs text-muted-foreground">{mentee.progress}% complete</span>
+            {roleData.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">No Requests Yet</h3>
+                <p className="text-muted-foreground">Mentorship requests from entrepreneurs will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {roleData.map((item) => (
+                  <div key={item._id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="flex items-center space-x-4">
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={item.image} alt={item.name} />
+                        <AvatarFallback>{(item.name || 'U').charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h4 className="font-semibold">{item.name}</h4>
+                        <p className="text-sm text-muted-foreground">{item.company}</p>
+                        {item.areasOfHelp && item.areasOfHelp.length > 0 && (
+                          <div className="flex gap-1 mt-1">
+                            {item.areasOfHelp.slice(0, 3).map((area: string, i: number) => (
+                              <Badge key={i} variant="outline" className="text-xs">{area}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        {item.message && (
+                          <p className="text-xs text-muted-foreground mt-1 max-w-xs truncate">"{item.message}"</p>
+                        )}
                       </div>
                     </div>
+                    <div className="flex flex-col items-end gap-2">
+                      {getStatusBadge(item.status)}
+                      {item.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => handleStatusUpdate(item._id, 'accepted')}>
+                            <CheckCircle className="mr-1 h-3 w-3" /> Accept
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleStatusUpdate(item._id, 'rejected')}>
+                            <XCircle className="mr-1 h-3 w-3" /> Decline
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">Next Session</p>
-                    <p className="text-sm text-muted-foreground">{mentee.nextSession}</p>
-                    <Button size="sm" className="mt-2">
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Message
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -266,54 +235,92 @@ const CollaboratorDashboard = () => {
       <TabsContent value="overview" className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Active Audits</CardTitle>
-            <CardDescription>Companies you're currently auditing</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Audit Requests</CardTitle>
+                <CardDescription>Startups requesting audits</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => fetchData()} disabled={isRefreshing}>
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {auditorData.audits.map((audit) => (
-                <div key={audit.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <h4 className="font-semibold">{audit.company}</h4>
-                      <Badge className={audit.riskLevel === 'High' ? 'bg-red-100 text-red-800' : audit.riskLevel === 'Medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}>
-                        {audit.riskLevel} Risk
-                      </Badge>
+            {roleData.length === 0 ? (
+              <div className="text-center py-12">
+                <Shield className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">No Audit Requests</h3>
+                <p className="text-muted-foreground">Audit requests will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {roleData.map((item) => (
+                  <div key={item._id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h4 className="font-semibold">{item.company}</h4>
+                        <Badge variant="outline">{item.type}</Badge>
+                      </div>
+                      {item.auditAreas && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {item.auditAreas.slice(0, 3).map((area: string, i: number) => (
+                            <Badge key={i} variant="secondary" className="text-xs">{area}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {item.urgency && `Urgency: ${item.urgency} • `}
+                        Submitted: {new Date(item.createdAt).toLocaleDateString()}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">{audit.type}</p>
-                    <div className="flex items-center">
-                      <Progress value={audit.progress} className="w-32 h-2 mr-2" />
-                      <span className="text-xs text-muted-foreground">{audit.progress}% complete</span>
+                    <div className="flex flex-col items-end gap-2">
+                      {getStatusBadge(item.status)}
+                      {(item.status === 'requested' || item.status === 'assigned') && (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => handleStatusUpdate(item._id, 'in_progress')}>
+                            Start Audit
+                          </Button>
+                        </div>
+                      )}
+                      {item.status === 'in_progress' && (
+                        <Button size="sm" onClick={() => handleStatusUpdate(item._id, 'completed')}>
+                          <CheckCircle className="mr-1 h-3 w-3" /> Complete
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <Badge variant={audit.status === 'In Progress' ? 'default' : 'secondary'}>
-                      {audit.status}
-                    </Badge>
-                    <p className="text-sm text-muted-foreground mt-1">Due: {audit.deadline}</p>
-                    <Button size="sm" className="mt-2">
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Report
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
       <TabsContent value="reports" className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Audit Reports</CardTitle>
-            <CardDescription>Completed and draft audit reports</CardDescription>
+            <CardTitle>Completed Audits</CardTitle>
+            <CardDescription>Audits you have completed</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-12">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-semibold">No Reports Available</h3>
-              <p className="text-muted-foreground">Complete audits to generate reports</p>
-            </div>
+            {roleData.filter(a => a.status === 'completed').length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">No Completed Audits</h3>
+                <p className="text-muted-foreground">Complete audits to see them here</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {roleData.filter(a => a.status === 'completed').map((item) => (
+                  <div key={item._id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                    <div>
+                      <p className="font-medium">{item.company}</p>
+                      <p className="text-sm text-muted-foreground">{item.type}</p>
+                    </div>
+                    <Badge className="bg-green-100 text-green-800">Completed</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -325,43 +332,62 @@ const CollaboratorDashboard = () => {
       <TabsContent value="overview" className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Patent Applications</CardTitle>
-            <CardDescription>Applications submitted for review</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Patent Applications</CardTitle>
+                <CardDescription>Applications submitted for review</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => fetchData()} disabled={isRefreshing}>
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {patentData.applications.map((application) => (
-                <div key={application.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <h4 className="font-semibold">{application.title}</h4>
-                      <Badge className={application.priority === 'High' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}>
-                        {application.priority}
-                      </Badge>
+            {roleData.length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">No Patent Applications</h3>
+                <p className="text-muted-foreground">Patent applications will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {roleData.map((item) => (
+                  <div key={item._id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h4 className="font-semibold">{item.title || 'Untitled Patent'}</h4>
+                        {item.patentType && <Badge variant="outline">{item.patentType}</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{item.applicant}</p>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground mt-1 max-w-md truncate">{item.description}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Submitted: {new Date(item.createdAt).toLocaleDateString()}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground">{application.applicant}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Submitted: {application.submittedDate}</p>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant={application.status === 'Approved' ? 'default' : 'secondary'}>
-                      {application.status}
-                    </Badge>
-                    <div className="mt-2 space-x-2">
-                      <Button size="sm" variant="outline">
-                        <Download className="mr-2 h-4 w-4" />
-                        Review
-                      </Button>
-                      {application.status === 'Under Review' && (
-                        <Button size="sm">
-                          <CheckCircle className="mr-2 h-4 w-4" />
-                          Approve
+                    <div className="flex flex-col items-end gap-2">
+                      {getStatusBadge(item.status)}
+                      {item.status === 'submitted' && (
+                        <Button size="sm" onClick={() => handleStatusUpdate(item._id, 'under_review')}>
+                          Start Review
                         </Button>
+                      )}
+                      {item.status === 'under_review' && (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => handleStatusUpdate(item._id, 'approved')}>
+                            <CheckCircle className="mr-1 h-3 w-3" /> Approve
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleStatusUpdate(item._id, 'rejected')}>
+                            <XCircle className="mr-1 h-3 w-3" /> Reject
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -369,14 +395,28 @@ const CollaboratorDashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle>Recent Decisions</CardTitle>
-            <CardDescription>Your recent patent application decisions</CardDescription>
+            <CardDescription>Your recent patent decisions</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-12">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-semibold">No Recent Decisions</h3>
-              <p className="text-muted-foreground">Your patent decisions will appear here</p>
-            </div>
+            {roleData.filter(a => ['approved', 'rejected'].includes(a.status)).length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">No Recent Decisions</h3>
+                <p className="text-muted-foreground">Your patent decisions will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {roleData.filter(a => ['approved', 'rejected'].includes(a.status)).map((item) => (
+                  <div key={item._id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                    <div>
+                      <p className="font-medium">{item.title}</p>
+                      <p className="text-sm text-muted-foreground">{item.applicant}</p>
+                    </div>
+                    {getStatusBadge(item.status)}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -387,22 +427,25 @@ const CollaboratorDashboard = () => {
     switch (profile?.role) {
       case 'mentor':
         return (
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Mentees</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
           </TabsList>
         );
       case 'auditor':
         return (
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Active Audits</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
             <TabsTrigger value="reports">Reports</TabsTrigger>
           </TabsList>
         );
       case 'patent_officer':
         return (
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Applications</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
             <TabsTrigger value="decisions">Decisions</TabsTrigger>
           </TabsList>
         );
@@ -412,15 +455,20 @@ const CollaboratorDashboard = () => {
   };
 
   const getContent = () => {
+    const messagingTab = (
+      <TabsContent value="messages">
+        <Messaging />
+      </TabsContent>
+    );
     switch (profile?.role) {
       case 'mentor':
-        return renderMentorContent();
+        return <>{renderMentorContent()}{messagingTab}</>;
       case 'auditor':
-        return renderAuditorContent();
+        return <>{renderAuditorContent()}{messagingTab}</>;
       case 'patent_officer':
-        return renderPatentOfficerContent();
+        return <>{renderPatentOfficerContent()}{messagingTab}</>;
       default:
-        return null;
+        return messagingTab;
     }
   };
 

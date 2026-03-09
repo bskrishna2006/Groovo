@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '../../components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,8 @@ import {
   ArrowRight,
   Plus,
   TrendingUp,
-  Lightbulb
+  Lightbulb,
+  RefreshCw
 } from 'lucide-react';
 import StartupProfileForm from '../../components/forms/StartupProfileForm';
 import MentorshipRequestForm from '../../components/forms/MentorshipRequestForm';
@@ -24,32 +25,71 @@ import PatentSupportForm from '../../components/forms/PatentSupportForm';
 import AuditRequestForm from '../../components/forms/AuditRequestForm';
 import RoadmapViewer from '../../components/RoadmapViewer';
 import Forum from '../../components/forum/Forum';
+import Messaging from '../../components/Messaging';
 import { useAuth } from '../../contexts/AuthContext';
+
+const REFRESH_INTERVAL = 15000; // 15 seconds
 
 const EntrepreneurDashboard = () => {
   const [activeForm, setActiveForm] = useState<string | null>(null);
   const { token } = useAuth();
   const [dashStats, setDashStats] = useState<any>(null);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statsRes, activitiesRes] = await Promise.all([
-          fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${token}` } }),
-          fetch('/api/dashboard/activities', { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-        const statsData = await statsRes.json();
-        const activitiesData = await activitiesRes.json();
+  const fetchData = useCallback(async (silent = false) => {
+    if (!token) return;
+    if (!silent) setIsRefreshing(true);
+    try {
+      const [statsRes, activitiesRes] = await Promise.all([
+        fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/dashboard/activities', { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const statsData = await statsRes.json();
+      const activitiesData = await activitiesRes.json();
 
-        if (statsData.success) setDashStats(statsData.data);
-        if (activitiesData.success) setRecentActivities(activitiesData.data);
-      } catch (err) {
-        console.error('Failed to fetch dashboard data', err);
-      }
-    };
-    if (token) fetchData();
+      if (statsData.success) setDashStats(statsData.data);
+      if (activitiesData.success) setRecentActivities(activitiesData.data);
+    } catch (err) {
+      console.error('Failed to fetch dashboard data', err);
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [token]);
+
+  // Initial fetch + 15s polling
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(() => fetchData(true), REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  // Helper to format currency
+  const formatCurrency = (val: number) => {
+    if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
+    if (val >= 1000) return `$${(val / 1000).toFixed(0)}K`;
+    return `$${val}`;
+  };
+
+  const seedFunded = dashStats?.seedFunded || 0;
+  const seriesAFunded = dashStats?.seriesAFunded || 0;
+  const seedGoal = dashStats?.seedGoal || 250000;
+  const seriesAGoal = dashStats?.seriesAGoal || 1000000;
+  const seedPercent = seedGoal > 0 ? Math.min(Math.round((seedFunded / seedGoal) * 100), 100) : 0;
+  const seriesAPercent = seriesAGoal > 0 ? Math.min(Math.round((seriesAFunded / seriesAGoal) * 100), 100) : 0;
+
+  const startupHealth = dashStats?.startupHealth;
+
+  const getHealthBadge = (status: string) => {
+    switch (status) {
+      case 'complete':
+        return <Badge className="bg-green-100 text-green-800">Complete</Badge>;
+      case 'in_progress':
+        return <Badge className="bg-yellow-100 text-yellow-800">In Progress</Badge>;
+      default:
+        return <Badge variant="outline">Pending</Badge>;
+    }
+  };
 
   const stats = [
     {
@@ -105,18 +145,39 @@ const EntrepreneurDashboard = () => {
     }
   ];
 
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'accepted':
+      case 'approved':
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-800">{status}</Badge>;
+      case 'rejected':
+        return <Badge className="bg-red-100 text-red-800">{status}</Badge>;
+      case 'pending':
+      case 'submitted':
+      case 'requested':
+        return <Badge className="bg-yellow-100 text-yellow-800">{status}</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
   const renderForm = () => {
+    const onClose = () => {
+      setActiveForm(null);
+      fetchData(); // Re-fetch data after form submission
+    };
     switch (activeForm) {
       case 'profile':
-        return <StartupProfileForm onClose={() => setActiveForm(null)} />;
+        return <StartupProfileForm onClose={onClose} />;
       case 'mentorship':
-        return <MentorshipRequestForm onClose={() => setActiveForm(null)} />;
+        return <MentorshipRequestForm onClose={onClose} />;
       case 'funding':
-        return <FundingProposalForm onClose={() => setActiveForm(null)} />;
+        return <FundingProposalForm onClose={onClose} />;
       case 'patent':
-        return <PatentSupportForm onClose={() => setActiveForm(null)} />;
+        return <PatentSupportForm onClose={onClose} />;
       case 'audit':
-        return <AuditRequestForm onClose={() => setActiveForm(null)} />;
+        return <AuditRequestForm onClose={onClose} />;
       default:
         return null;
     }
@@ -137,31 +198,34 @@ const EntrepreneurDashboard = () => {
     >
       <div className="space-y-8">
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat, index) => (
-            <Card key={index} className="hover-lift card-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{stat.title}</p>
-                    <p className="text-2xl font-bold">{stat.value}</p>
-                    <p className="text-xs text-green-600">{stat.change}</p>
+        <div className="flex items-center justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-1">
+            {stats.map((stat, index) => (
+              <Card key={index} className="hover-lift card-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">{stat.title}</p>
+                      <p className="text-2xl font-bold">{stat.value}</p>
+                      <p className="text-xs text-green-600">{stat.change}</p>
+                    </div>
+                    <div className="p-3 bg-muted/50 rounded-lg">
+                      {stat.icon}
+                    </div>
                   </div>
-                  <div className="p-3 bg-muted/50 rounded-lg">
-                    {stat.icon}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="requests">My Requests</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
             <TabsTrigger value="forum">Forum</TabsTrigger>
-            <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
             <TabsTrigger value="activities">Activities</TabsTrigger>
             <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
@@ -192,7 +256,7 @@ const EntrepreneurDashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Progress Overview */}
+            {/* Funding Progress + Startup Health */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
@@ -203,17 +267,22 @@ const EntrepreneurDashboard = () => {
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm">Seed Round</span>
-                      <span className="text-sm">$150K / $250K</span>
+                      <span className="text-sm">{formatCurrency(seedFunded)} / {formatCurrency(seedGoal)}</span>
                     </div>
-                    <Progress value={60} className="h-2" />
+                    <Progress value={seedPercent} className="h-2" />
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm">Series A Target</span>
-                      <span className="text-sm">$0 / $1M</span>
+                      <span className="text-sm">{formatCurrency(seriesAFunded)} / {formatCurrency(seriesAGoal)}</span>
                     </div>
-                    <Progress value={0} className="h-2" />
+                    <Progress value={seriesAPercent} className="h-2" />
                   </div>
+                  {dashStats?.acceptedFunding > 0 && (
+                    <p className="text-xs text-green-600 mt-2">
+                      ✓ {dashStats.acceptedFunding} proposal(s) accepted by investors
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -225,40 +294,161 @@ const EntrepreneurDashboard = () => {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">Business Plan</span>
-                    <Badge variant="secondary">Complete</Badge>
+                    {getHealthBadge(startupHealth?.businessPlan || 'pending')}
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm">Legal Structure</span>
-                    <Badge variant="secondary">Complete</Badge>
+                    {getHealthBadge(startupHealth?.legalStructure || 'pending')}
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm">IP Protection</span>
-                    <Badge variant="outline">In Progress</Badge>
+                    {getHealthBadge(startupHealth?.ipProtection || 'pending')}
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm">Market Validation</span>
-                    <Badge variant="outline">Pending</Badge>
+                    {getHealthBadge(startupHealth?.marketValidation || 'pending')}
                   </div>
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          <TabsContent value="forum">
-            <Forum />
+          {/* My Requests Tab — shows all request statuses */}
+          <TabsContent value="requests" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Mentorship Requests */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-blue-600" />
+                    Mentorship Requests
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(!dashStats?.mentorshipRequests || dashStats.mentorshipRequests.length === 0) ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No mentorship requests yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dashStats.mentorshipRequests.map((r: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                          <div>
+                            <p className="font-medium text-sm">{r.mentor?.fullName || 'Mentor'}</p>
+                            <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          {getStatusBadge(r.status)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Funding Requests */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-green-600" />
+                    Funding Proposals
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(!dashStats?.fundingRequests || dashStats.fundingRequests.length === 0) ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No funding proposals yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dashStats.fundingRequests.map((r: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                          <div>
+                            <p className="font-medium text-sm">{r.fundingStage} — {r.fundingAmount}</p>
+                            <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          {getStatusBadge(r.status)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Patent Requests */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Lightbulb className="h-5 w-5 text-orange-600" />
+                    Patent Applications
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(!dashStats?.patentRequests || dashStats.patentRequests.length === 0) ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No patent applications yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dashStats.patentRequests.map((r: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                          <div>
+                            <p className="font-medium text-sm">{r.inventionTitle}</p>
+                            <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          {getStatusBadge(r.status)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Audit Requests */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-purple-600" />
+                    Audit Requests
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(!dashStats?.auditRequests || dashStats.auditRequests.length === 0) ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No audit requests yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dashStats.auditRequests.map((r: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                          <div>
+                            <p className="font-medium text-sm">{r.auditType || 'Audit'}</p>
+                            <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          {getStatusBadge(r.status)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
-          <TabsContent value="roadmap">
-            <RoadmapViewer />
+          <TabsContent value="messages">
+            <Messaging />
+          </TabsContent>
+
+          <TabsContent value="forum">
+            <Forum />
           </TabsContent>
 
           <TabsContent value="activities" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Recent Activities</CardTitle>
-                <CardDescription>
-                  Stay updated on your startup progress
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Recent Activities</CardTitle>
+                    <CardDescription>
+                      Stay updated on your startup progress
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => fetchData()} disabled={isRefreshing}>
+                    <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
